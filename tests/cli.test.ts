@@ -1,0 +1,53 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+
+import { runCli } from "../src/cli.js";
+
+let dir: string;
+let stdout: string[];
+let stderr: string[];
+
+beforeEach(async () => {
+  dir = await mkdtemp(join(tmpdir(), "pi-planify-cli-"));
+  stdout = [];
+  stderr = [];
+});
+
+afterEach(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
+
+function run(args: string[]) {
+  return runCli([args[0], "--root", dir, ...args.slice(1)], {
+    stdout: (text) => stdout.push(text),
+    stderr: (text) => stderr.push(text),
+  });
+}
+
+describe("runCli", () => {
+  test("adds, lists, and cancels scheduled tasks", async () => {
+    expect(await run(["add", "--session", "/tmp/session.jsonl", "--cwd", "/tmp/project", "--at", "in 15m", "--message", "run checks"])).toBe(0);
+    expect(stdout[0]).toContain("Scheduled");
+
+    stdout = [];
+    expect(await run(["list"])).toBe(0);
+    expect(stdout.join("\n")).toContain("run checks");
+
+    const taskId = stdout[0].split("\t")[0];
+    stdout = [];
+    expect(await run(["cancel", taskId])).toBe(0);
+    expect(stdout[0]).toBe(`Cancelled ${taskId}`);
+  });
+
+  test("returns errors for missing arguments and invalid times", async () => {
+    expect(await run(["add", "--session", "/tmp/session.jsonl", "--at", "not-a-time", "--message", "run checks"])).toBe(1);
+    expect(stderr[0]).toContain("Could not parse scheduled time");
+
+    stderr = [];
+    expect(await run(["cancel"])).toBe(1);
+    expect(stderr[0]).toContain("Missing task id");
+  });
+});

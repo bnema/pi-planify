@@ -57,6 +57,37 @@ describe("deliverDueTasks", () => {
     expect((await store.get("task-1"))?.status).toBe("failed");
     expect((await store.get("task-1"))?.lastError).toContain("boom");
   });
+
+  test("serializes concurrent deliveries to the same session", async () => {
+    let nextId = 0;
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => `task-${nextId++}` });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "first" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "second" });
+    let active = 0;
+    let maxActive = 0;
+    let firstExecStarted: (() => void) | undefined;
+    const firstExecStartedPromise = new Promise<void>((resolve) => {
+      firstExecStarted = resolve;
+    });
+
+    const exec = async () => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      firstExecStarted?.();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      active -= 1;
+      return { exitCode: 0, stdout: "ok", stderr: "" };
+    };
+
+    const firstRun = deliverDueTasks({ rootDir: dir, now: () => 10_000, workerId: "worker-1", limit: 1, exec });
+    await firstExecStartedPromise;
+    const secondRun = deliverDueTasks({ rootDir: dir, now: () => 10_000, workerId: "worker-2", limit: 1, exec });
+    const [first, second] = await Promise.all([firstRun, secondRun]);
+
+    expect(first.failed + second.failed).toBe(0);
+    expect(first.delivered + second.delivered).toBe(2);
+    expect(maxActive).toBe(1);
+  });
 });
 
 describe("buildSystemdUnits", () => {

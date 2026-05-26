@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import { formatScheduledMessage } from "./message.js";
 import { defaultPlanifyRoot } from "./paths.js";
@@ -71,7 +72,20 @@ async function withSessionLock<T>(rootDir: string, task: PlanifyTask, run: () =>
   const digest = createHash("sha256").update(task.sessionFile).digest("hex").slice(0, 32);
   const lockDir = join(rootDir, "locks", `${digest}.lock`);
   await mkdir(join(rootDir, "locks"), { recursive: true });
-  await mkdir(lockDir);
+
+  for (;;) {
+    try {
+      await mkdir(lockDir);
+      break;
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") {
+        await sleep(25);
+        continue;
+      }
+      throw error;
+    }
+  }
+
   try {
     return await run();
   } finally {

@@ -1,6 +1,7 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { AddTaskInput, PlanifyTask } from "./types.js";
 
@@ -27,87 +28,99 @@ export class PlanifyStore {
   }
 
   async add(input: AddTaskInput): Promise<PlanifyTask> {
-    const file = await this.readFile();
-    const timestamp = this.now();
-    const task: PlanifyTask = {
-      id: this.createId(),
-      dueAt: input.dueAt,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      sessionFile: input.sessionFile,
-      cwd: input.cwd,
-      message: input.message,
-      status: "scheduled",
-      attempts: 0,
-    };
-    file.tasks.push(task);
-    await this.writeFile(file);
-    return task;
+    return await this.withStoreLock(async () => {
+      const file = await this.readFile();
+      const timestamp = this.now();
+      const task: PlanifyTask = {
+        id: this.createId(),
+        dueAt: input.dueAt,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        sessionFile: input.sessionFile,
+        cwd: input.cwd,
+        message: input.message,
+        status: "scheduled",
+        attempts: 0,
+      };
+      file.tasks.push(task);
+      await this.writeFile(file);
+      return task;
+    });
   }
 
   async list(): Promise<PlanifyTask[]> {
-    const file = await this.readFile();
-    return file.tasks.map((task) => ({ ...task }));
+    return await this.withStoreLock(async () => {
+      const file = await this.readFile();
+      return file.tasks.map((task) => ({ ...task }));
+    });
   }
 
   async get(id: string): Promise<PlanifyTask | undefined> {
-    const file = await this.readFile();
-    const task = file.tasks.find((candidate) => candidate.id === id);
-    return task ? { ...task } : undefined;
+    return await this.withStoreLock(async () => {
+      const file = await this.readFile();
+      const task = file.tasks.find((candidate) => candidate.id === id);
+      return task ? { ...task } : undefined;
+    });
   }
 
   async cancel(id: string): Promise<boolean> {
-    const file = await this.readFile();
-    const task = file.tasks.find((candidate) => candidate.id === id);
-    if (!task || task.status !== "scheduled") return false;
+    return await this.withStoreLock(async () => {
+      const file = await this.readFile();
+      const task = file.tasks.find((candidate) => candidate.id === id);
+      if (!task || task.status !== "scheduled") return false;
 
-    task.status = "cancelled";
-    task.updatedAt = this.now();
-    await this.writeFile(file);
-    return true;
+      task.status = "cancelled";
+      task.updatedAt = this.now();
+      await this.writeFile(file);
+      return true;
+    });
   }
 
   async requeueStaleClaims(options: { olderThanMs: number }): Promise<number> {
-    const file = await this.readFile();
-    const timestamp = this.now();
-    let count = 0;
+    return await this.withStoreLock(async () => {
+      const file = await this.readFile();
+      const timestamp = this.now();
+      let count = 0;
 
-    for (const task of file.tasks) {
-      if (task.status !== "claimed") continue;
-      const claimedAt = task.claimedAt ?? task.updatedAt;
-      if (timestamp - claimedAt < options.olderThanMs) continue;
+      for (const task of file.tasks) {
+        if (task.status !== "claimed") continue;
+        const claimedAt = task.claimedAt ?? task.updatedAt;
+        if (timestamp - claimedAt < options.olderThanMs) continue;
 
-      task.status = "scheduled";
-      task.updatedAt = timestamp;
-      task.lastError = `Recovered stale claim from ${task.claimedBy ?? "unknown worker"}.`;
-      task.claimedAt = undefined;
-      task.claimedBy = undefined;
-      count += 1;
-    }
+        task.status = "scheduled";
+        task.updatedAt = timestamp;
+        task.lastError = `Recovered stale claim from ${task.claimedBy ?? "unknown worker"}.`;
+        task.claimedAt = undefined;
+        task.claimedBy = undefined;
+        count += 1;
+      }
 
-    if (count > 0) await this.writeFile(file);
-    return count;
+      if (count > 0) await this.writeFile(file);
+      return count;
+    });
   }
 
   async claimDue(options: { limit: number; workerId: string }): Promise<PlanifyTask[]> {
-    const file = await this.readFile();
-    const timestamp = this.now();
-    const claimed: PlanifyTask[] = [];
+    return await this.withStoreLock(async () => {
+      const file = await this.readFile();
+      const timestamp = this.now();
+      const claimed: PlanifyTask[] = [];
 
-    for (const task of file.tasks) {
-      if (claimed.length >= options.limit) break;
-      if (task.status !== "scheduled" || task.dueAt > timestamp) continue;
+      for (const task of file.tasks) {
+        if (claimed.length >= options.limit) break;
+        if (task.status !== "scheduled" || task.dueAt > timestamp) continue;
 
-      task.status = "claimed";
-      task.claimedAt = timestamp;
-      task.claimedBy = options.workerId;
-      task.updatedAt = timestamp;
-      task.attempts += 1;
-      claimed.push({ ...task });
-    }
+        task.status = "claimed";
+        task.claimedAt = timestamp;
+        task.claimedBy = options.workerId;
+        task.updatedAt = timestamp;
+        task.attempts += 1;
+        claimed.push({ ...task });
+      }
 
-    if (claimed.length > 0) await this.writeFile(file);
-    return claimed;
+      if (claimed.length > 0) await this.writeFile(file);
+      return claimed;
+    });
   }
 
   async markDelivered(id: string): Promise<boolean> {
@@ -128,12 +141,14 @@ export class PlanifyStore {
   }
 
   private async updateTask(id: string, update: (task: PlanifyTask, now: number) => void): Promise<boolean> {
-    const file = await this.readFile();
-    const task = file.tasks.find((candidate) => candidate.id === id);
-    if (!task) return false;
-    update(task, this.now());
-    await this.writeFile(file);
-    return true;
+    return await this.withStoreLock(async () => {
+      const file = await this.readFile();
+      const task = file.tasks.find((candidate) => candidate.id === id);
+      if (!task) return false;
+      update(task, this.now());
+      await this.writeFile(file);
+      return true;
+    });
   }
 
   private async readFile(): Promise<StoreFile> {
@@ -151,8 +166,32 @@ export class PlanifyStore {
 
   private async writeFile(file: StoreFile): Promise<void> {
     await mkdir(dirname(this.dbPath), { recursive: true });
-    const tempPath = `${this.dbPath}.${process.pid}.${Date.now()}.tmp`;
+    const tempPath = `${this.dbPath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tempPath, `${JSON.stringify(file, null, 2)}\n`, "utf8");
     await rename(tempPath, this.dbPath);
+  }
+
+  private async withStoreLock<T>(run: () => Promise<T>): Promise<T> {
+    const lockDir = join(dirname(this.dbPath), "locks", "store.lock");
+    await mkdir(dirname(lockDir), { recursive: true });
+
+    for (;;) {
+      try {
+        await mkdir(lockDir);
+        break;
+      } catch (error) {
+        if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") {
+          await sleep(25);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    try {
+      return await run();
+    } finally {
+      await rm(lockDir, { recursive: true, force: true });
+    }
   }
 }

@@ -43,6 +43,18 @@ describe("PlanifyStore", () => {
     ]);
   });
 
+  test("serializes concurrent writes so scheduled tasks are not lost", async () => {
+    let nextId = 0;
+    const store = new PlanifyStore({ rootDir: dir, now: () => 1_000, createId: () => `task-${nextId++}` });
+
+    await Promise.all([
+      store.add({ dueAt: 2_000, sessionFile: "/tmp/a.jsonl", cwd: "/tmp/project", message: "first" }),
+      store.add({ dueAt: 3_000, sessionFile: "/tmp/b.jsonl", cwd: "/tmp/project", message: "second" }),
+    ]);
+
+    expect((await store.list()).map((task) => task.message).sort()).toEqual(["first", "second"]);
+  });
+
   test("claims only due scheduled tasks and marks them claimed", async () => {
     const store = new PlanifyStore({ rootDir: dir, now: () => 10_000 });
     const due = await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "due" });

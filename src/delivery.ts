@@ -23,6 +23,7 @@ export interface DeliverDueOptions {
   workerId?: string;
   piBin?: string;
   limit?: number;
+  staleClaimMs?: number;
   exec?: ExecFn;
 }
 
@@ -38,6 +39,7 @@ export async function deliverDueTasks(options: DeliverDueOptions = {}): Promise<
   const workerId = options.workerId ?? `worker-${process.pid}-${randomUUID()}`;
   const exec = options.exec ?? execFile;
   const piBin = options.piBin ?? process.env.PI_PLANIFY_PI_BIN ?? "pi";
+  await store.requeueStaleClaims({ olderThanMs: options.staleClaimMs ?? 15 * 60_000 });
   const tasks = await store.claimDue({ limit: options.limit ?? 10, workerId });
   const summary: DeliverySummary = { claimed: tasks.length, delivered: 0, failed: 0 };
 

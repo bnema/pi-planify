@@ -55,6 +55,19 @@ describe("PlanifyStore", () => {
     expect((await store.get(due.id))?.claimedBy).toBe("worker-1");
   });
 
+  test("requeues stale claimed tasks after a crash window", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "due" });
+    await store.claimDue({ limit: 1, workerId: "worker-before-crash" });
+
+    const recovered = new PlanifyStore({ rootDir: dir, now: () => 20_000 });
+    const count = await recovered.requeueStaleClaims({ olderThanMs: 5_000 });
+
+    expect(count).toBe(1);
+    expect((await recovered.get("task-1"))?.status).toBe("scheduled");
+    expect((await recovered.get("task-1"))?.lastError).toContain("stale claim");
+  });
+
   test("cancels scheduled tasks but not claimed tasks", async () => {
     const store = new PlanifyStore({ rootDir: dir, now: () => 10_000 });
     const scheduled = await store.add({ dueAt: 20_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "later" });

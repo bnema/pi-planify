@@ -67,6 +67,28 @@ export class PlanifyStore {
     return true;
   }
 
+  async requeueStaleClaims(options: { olderThanMs: number }): Promise<number> {
+    const file = await this.readFile();
+    const timestamp = this.now();
+    let count = 0;
+
+    for (const task of file.tasks) {
+      if (task.status !== "claimed") continue;
+      const claimedAt = task.claimedAt ?? task.updatedAt;
+      if (timestamp - claimedAt < options.olderThanMs) continue;
+
+      task.status = "scheduled";
+      task.updatedAt = timestamp;
+      task.lastError = `Recovered stale claim from ${task.claimedBy ?? "unknown worker"}.`;
+      task.claimedAt = undefined;
+      task.claimedBy = undefined;
+      count += 1;
+    }
+
+    if (count > 0) await this.writeFile(file);
+    return count;
+  }
+
   async claimDue(options: { limit: number; workerId: string }): Promise<PlanifyTask[]> {
     const file = await this.readFile();
     const timestamp = this.now();

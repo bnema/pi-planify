@@ -26,7 +26,7 @@ describe("PlanifyStore", () => {
       dueAt: 2_000,
       sessionFile: "/tmp/session.jsonl",
       cwd: "/tmp/project",
-      message: "resume the refactor",
+      message: "review the pending changes",
     });
 
     const reloaded = new PlanifyStore({ rootDir: dir, now: () => 1_500 });
@@ -37,7 +37,7 @@ describe("PlanifyStore", () => {
         dueAt: 2_000,
         sessionFile: "/tmp/session.jsonl",
         cwd: "/tmp/project",
-        message: "resume the refactor",
+        message: "review the pending changes",
         attempts: 0,
       }),
     ]);
@@ -83,8 +83,8 @@ describe("PlanifyStore", () => {
 
 describe("scheduled message formatting", () => {
   test("wraps user text with planify context", () => {
-    expect(formatScheduledMessage({ id: "task-123", dueAt: 2_000, message: "run the tests" })).toBe(
-      `[pi-planify scheduled message]\nC’est le moment d’exécuter cette tâche planifiée :\n\nrun the tests\n\nQuand tu as terminé, réponds dans cette session avec un court rapport indiquant si la tâche a réussi ou échoué, et les détails utiles.\n\nTask ID: task-123\nDue: 1970-01-01T00:00:02.000Z`,
+    expect(formatScheduledMessage({ id: "task-123", dueAt: 2_000, message: "run the checks" })).toBe(
+      `[pi-planify scheduled message]\nIt is time to execute this scheduled task:\n\nrun the checks\n\nWhen finished, reply in this session with a short report stating whether the task succeeded or failed, plus any useful details.\n\nTask ID: task-123\nDue: 1970-01-01T00:00:02.000Z`,
     );
   });
 });

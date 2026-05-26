@@ -5,26 +5,26 @@ import { buildScheduledTaskMessage } from "../src/structured-task.js";
 describe("buildScheduledTaskMessage", () => {
   test("formats structured task details into a future agent prompt", () => {
     expect(buildScheduledTaskMessage({
-      title: "Push branch and open PR",
-      objective: "Push automation/daily-sync-build and create a PR to main.",
-      context: "The branch has already been verified and reviewed.",
-      steps: ["git push -u origin automation/daily-sync-build", "gh pr create with the prepared title and body"],
-      acceptanceCriteria: ["Remote branch exists", "PR URL is reported back in the session"],
-    })).toBe(`Push branch and open PR
+      title: "Publish prepared change",
+      objective: "Publish the prepared branch and create the requested review item.",
+      context: "The branch has already been checked and is ready for handoff.",
+      steps: ["Push the prepared branch to the remote", "Create the review item with the prepared title and description"],
+      acceptanceCriteria: ["Remote branch exists", "Review item URL is reported back in the session"],
+    })).toBe(`Publish prepared change
 
 Objective:
-Push automation/daily-sync-build and create a PR to main.
+Publish the prepared branch and create the requested review item.
 
 Context:
-The branch has already been verified and reviewed.
+The branch has already been checked and is ready for handoff.
 
 Steps:
-1. git push -u origin automation/daily-sync-build
-2. gh pr create with the prepared title and body
+1. Push the prepared branch to the remote
+2. Create the review item with the prepared title and description
 
 Acceptance criteria:
 - Remote branch exists
-- PR URL is reported back in the session`);
+- Review item URL is reported back in the session`);
   });
 
   test("falls back to the plain message when no structured fields are provided", () => {

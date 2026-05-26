@@ -1,11 +1,11 @@
 export function formatScheduledMessage(task: { id: string; dueAt: number; message: string }): string {
   return [
     "[pi-planify scheduled message]",
-    "C’est le moment d’exécuter cette tâche planifiée :",
+    "It is time to execute this scheduled task:",
     "",
     task.message,
     "",
-    "Quand tu as terminé, réponds dans cette session avec un court rapport indiquant si la tâche a réussi ou échoué, et les détails utiles.",
+    "When finished, reply in this session with a short report stating whether the task succeeded or failed, plus any useful details.",
     "",
     `Task ID: ${task.id}`,
     `Due: ${new Date(task.dueAt).toISOString()}`,

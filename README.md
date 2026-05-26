@@ -1,14 +1,6 @@
 # pi-planify
 
-Pi package for reliable scheduled delivery of deferred messages into Pi sessions.
-
-## Concept
-
-`pi-planify` is a global user-level scheduler. A task is still fundamentally a message delivered to a specific Pi session at a future time.
-
-For simple tasks, that message is plain text. For richer tasks, the Pi tool can build the message from structured fields such as objective, context, steps, and acceptance criteria. At delivery time, the message asks the future agent turn to execute the task and report success or failure back into the same session.
-
-If Pi is not open, delivery uses non-interactive Pi:
+`pi-planify` is a global user-level scheduler task planifier plugin for Pi.
 
 ```bash
 pi --session <session-file> -p "<scheduled message>"

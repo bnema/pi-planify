@@ -48,5 +48,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
+  },
+  "dependencies": {
+    "jiti": "^2.7.0"
   }
 }

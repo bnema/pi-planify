@@ -2,7 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { execFile } from "./delivery.js";
+import { runCommand } from "./command-runner.js";
 
 export interface SystemdUnitOptions {
   binPath: string;
@@ -21,6 +21,6 @@ export async function installSystemdUserTimer(options: SystemdUnitOptions): Prom
   const units = buildSystemdUnits(options);
   await writeFile(join(dir, "pi-planify.service"), units.service, "utf8");
   await writeFile(join(dir, "pi-planify.timer"), units.timer, "utf8");
-  await execFile("systemctl", ["--user", "daemon-reload"], { cwd: process.cwd() });
-  await execFile("systemctl", ["--user", "enable", "--now", "pi-planify.timer"], { cwd: process.cwd() });
+  await runCommand("systemctl", ["--user", "daemon-reload"], { cwd: process.cwd() });
+  await runCommand("systemctl", ["--user", "enable", "--now", "pi-planify.timer"], { cwd: process.cwd() });
 }

@@ -1,21 +1,15 @@
-import { spawn } from "node:child_process";
-import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { setTimeout as sleep } from "node:timers/promises";
 
+import { type CommandResult, type CommandRunner, runCommand } from "./command-runner.js";
+import { withLock } from "./lock.js";
 import { formatScheduledMessage } from "./message.js";
 import { defaultPlanifyRoot } from "./paths.js";
 import { PlanifyStore } from "./store.js";
 import type { PlanifyTask } from "./types.js";
 
-export interface ExecResult {
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-}
-
-export type ExecFn = (command: string, args: string[], options: { cwd: string }) => Promise<ExecResult>;
+export type ExecResult = CommandResult;
+export type ExecFn = CommandRunner;
 
 export interface DeliverDueOptions {
   store?: PlanifyStore;
@@ -38,10 +32,13 @@ export async function deliverDueTasks(options: DeliverDueOptions = {}): Promise<
   const rootDir = options.rootDir ?? defaultPlanifyRoot();
   const store = options.store ?? new PlanifyStore({ rootDir, now: options.now });
   const workerId = options.workerId ?? `worker-${process.pid}-${randomUUID()}`;
-  const exec = options.exec ?? execFile;
+  const exec = options.exec ?? runCommand;
   const piBin = options.piBin ?? process.env.PI_PLANIFY_PI_BIN ?? "pi";
-  await store.requeueStaleClaims({ olderThanMs: options.staleClaimMs ?? 15 * 60_000 });
-  const tasks = await store.claimDue({ limit: options.limit ?? 10, workerId });
+  const tasks = await store.claimDue({
+    limit: options.limit ?? 10,
+    workerId,
+    staleClaimMs: options.staleClaimMs ?? 15 * 60_000,
+  });
   const summary: DeliverySummary = { claimed: tasks.length, delivered: 0, failed: 0 };
 
   for (const task of tasks) {
@@ -70,41 +67,5 @@ export async function deliverDueTasks(options: DeliverDueOptions = {}): Promise<
 
 async function withSessionLock<T>(rootDir: string, task: PlanifyTask, run: () => Promise<T>): Promise<T> {
   const digest = createHash("sha256").update(task.sessionFile).digest("hex").slice(0, 32);
-  const lockDir = join(rootDir, "locks", `${digest}.lock`);
-  await mkdir(join(rootDir, "locks"), { recursive: true });
-
-  for (;;) {
-    try {
-      await mkdir(lockDir);
-      break;
-    } catch (error) {
-      if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") {
-        await sleep(25);
-        continue;
-      }
-      throw error;
-    }
-  }
-
-  try {
-    return await run();
-  } finally {
-    await rm(lockDir, { recursive: true, force: true });
-  }
-}
-
-export async function execFile(command: string, args: string[], options: { cwd: string }): Promise<ExecResult> {
-  return await new Promise<ExecResult>((resolve, reject) => {
-    const child = spawn(command, args, { cwd: options.cwd, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.once("error", reject);
-    child.once("exit", (exitCode) => resolve({ exitCode, stdout, stderr }));
-  });
+  return await withLock(join(rootDir, "locks", `${digest}.lock`), run);
 }

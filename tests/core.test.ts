@@ -91,6 +91,16 @@ describe("PlanifyStore", () => {
     expect((await store.get(scheduled.id))?.status).toBe("cancelled");
     expect((await store.get(due.id))?.status).toBe("claimed");
   });
+
+  test("does not mark cancelled tasks delivered or failed", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
+    await store.add({ dueAt: 20_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "later" });
+    await store.cancel("task-1");
+
+    expect(await store.markDelivered("task-1")).toBe(false);
+    expect(await store.markFailed("task-1", "boom")).toBe(false);
+    expect((await store.get("task-1"))?.status).toBe("cancelled");
+  });
 });
 
 describe("scheduled message formatting", () => {

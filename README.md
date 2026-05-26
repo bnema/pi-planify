@@ -1,6 +1,6 @@
 # pi-planify
 
-`pi-planify` is a global user-level scheduler task planifier plugin for Pi.
+`pi-planify` is a global user-level scheduler task planifier plugin for Pi (Linux/systend only).
 
 ```bash
 pi --session <session-file> -p "<scheduled message>"

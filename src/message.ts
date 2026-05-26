@@ -5,6 +5,8 @@ export function formatScheduledMessage(task: { id: string; dueAt: number; messag
     "",
     task.message,
     "",
+    "Quand tu as terminé, réponds dans cette session avec un court rapport indiquant si la tâche a réussi ou échoué, et les détails utiles.",
+    "",
     `Task ID: ${task.id}`,
     `Due: ${new Date(task.dueAt).toISOString()}`,
   ].join("\n");

@@ -84,7 +84,7 @@ describe("PlanifyStore", () => {
 describe("scheduled message formatting", () => {
   test("wraps user text with planify context", () => {
     expect(formatScheduledMessage({ id: "task-123", dueAt: 2_000, message: "run the tests" })).toBe(
-      `[pi-planify scheduled message]\nC’est le moment d’exécuter cette tâche planifiée :\n\nrun the tests\n\nTask ID: task-123\nDue: 1970-01-01T00:00:02.000Z`,
+      `[pi-planify scheduled message]\nC’est le moment d’exécuter cette tâche planifiée :\n\nrun the tests\n\nQuand tu as terminé, réponds dans cette session avec un court rapport indiquant si la tâche a réussi ou échoué, et les détails utiles.\n\nTask ID: task-123\nDue: 1970-01-01T00:00:02.000Z`,
     );
   });
 });

@@ -30,6 +30,7 @@ export async function runCli(argv: string[], options: { stdout?: (text: string) 
         if (!at && !every) throw new Error("Missing --at or --every.");
         const intervalMs = every === undefined ? undefined : parseInterval(every);
         const maxRuns = parseOptionalPositiveInteger(parsed.flags.get("max-runs"), "max-runs");
+        if (intervalMs === undefined && parsed.flags.has("max-runs")) throw new Error("--max-runs requires --every.");
         const message = parsed.flags.get("message") ?? parsed.positionals.join(" ");
         if (!message.trim()) throw new Error("Missing --message or positional message.");
         const task = await store.add({

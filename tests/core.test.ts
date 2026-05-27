@@ -113,8 +113,8 @@ describe("PlanifyStore", () => {
     await store.add({ dueAt: 20_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "later" });
     await store.cancel("task-1");
 
-    expect(await store.markDelivered("task-1")).toBe(false);
-    expect(await store.markFailed("task-1", "boom")).toBe(false);
+    expect(await store.markDelivered("task-1", "worker-1")).toBe(false);
+    expect(await store.markFailed("task-1", "worker-1", "boom")).toBe(false);
     expect((await store.get("task-1"))?.status).toBe("cancelled");
   });
 
@@ -123,7 +123,7 @@ describe("PlanifyStore", () => {
     await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "repeat", intervalMs: 3_600_000 });
     await store.claimDue({ limit: 1, workerId: "worker-1" });
 
-    expect(await store.markDelivered("task-1")).toBe(true);
+    expect(await store.markDelivered("task-1", "worker-1")).toBe(true);
 
     const task = await store.get("task-1");
     expect(task).toEqual(expect.objectContaining({
@@ -142,7 +142,7 @@ describe("PlanifyStore", () => {
     await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "repeat", intervalMs: 3_600_000, maxRuns: 1 });
     await store.claimDue({ limit: 1, workerId: "worker-1" });
 
-    expect(await store.markDelivered("task-1")).toBe(true);
+    expect(await store.markDelivered("task-1", "worker-1")).toBe(true);
 
     expect(await store.get("task-1")).toEqual(expect.objectContaining({
       status: "delivered",
@@ -156,7 +156,7 @@ describe("PlanifyStore", () => {
     await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "repeat", intervalMs: 3_600_000 });
     await store.claimDue({ limit: 1, workerId: "worker-1" });
 
-    expect(await store.markFailed("task-1", "boom")).toBe(true);
+    expect(await store.markFailed("task-1", "worker-1", "boom")).toBe(true);
 
     const task = await store.get("task-1");
     expect(task).toEqual(expect.objectContaining({
@@ -167,6 +167,23 @@ describe("PlanifyStore", () => {
     }));
     expect(task?.claimedAt).toBeUndefined();
     expect(task?.claimedBy).toBeUndefined();
+  });
+
+  test("does not let a stale worker mutate a task claimed by another worker", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "repeat" });
+    await store.claimDue({ limit: 1, workerId: "worker-2" });
+
+    expect(await store.markDelivered("task-1", "worker-1")).toBe(false);
+    expect(await store.markFailed("task-1", "worker-1", "stale failure")).toBe(false);
+
+    const task = await store.get("task-1");
+    expect(task).toEqual(expect.objectContaining({
+      status: "claimed",
+      claimedBy: "worker-2",
+    }));
+    expect(task?.deliveredAt).toBeUndefined();
+    expect(task?.lastError).toBeUndefined();
   });
 });
 

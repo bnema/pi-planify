@@ -42,6 +42,7 @@ async function schedule(ctx: ExtensionContext, options: { when?: string; every?:
   if (!options.when && !options.every) throw new Error("Missing when or every.");
   const intervalMs = options.every === undefined ? undefined : parseInterval(options.every);
   const maxRuns = validateOptionalPositiveInteger(options.maxRuns, "maxRuns");
+  if (intervalMs === undefined && maxRuns !== undefined) throw new Error("maxRuns requires every.");
   const task = await store().add({
     dueAt: options.when ? parseWhen(options.when) : Date.now() + (intervalMs ?? 0),
     sessionFile: requireSessionFile(ctx),

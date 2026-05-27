@@ -92,8 +92,8 @@ describe("deliverDueTasks", () => {
     const task = { id: "task-1", dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests" };
     const store = {
       claimDue: async () => [task],
-      markDelivered: async () => false,
-      markFailed: async () => true,
+      markDelivered: async (_id: string, _owner: string) => false,
+      markFailed: async (_id: string, _owner: string, _error: string) => true,
     } as unknown as PlanifyStore;
 
     const result = await deliverDueTasks({

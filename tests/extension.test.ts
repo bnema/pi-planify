@@ -93,4 +93,14 @@ describe("planify extension", () => {
     const [task] = await new PlanifyStore({ rootDir: join(dir, "planify") }).list();
     expect(task).toEqual(expect.objectContaining({ intervalMs: 3_600_000, maxRuns: 3, runCount: 0 }));
   });
+
+  test("rejects maxRuns for one-off tool schedules", async () => {
+    const { tools, ctx } = setup();
+
+    await expect(tools.get("planify")?.execute("tool-1", {
+      when: "in 15m",
+      maxRuns: 3,
+      message: "run checks",
+    }, undefined, undefined, ctx)).rejects.toThrow("maxRuns requires every");
+  });
 });

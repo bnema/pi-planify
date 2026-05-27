@@ -54,6 +54,11 @@ describe("runCli", () => {
     expect(task.dueAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
   });
 
+  test("rejects max runs for one-off tasks", async () => {
+    expect(await run(["add", "--session", "/tmp/session.jsonl", "--at", "in 15m", "--max-runs", "3", "--message", "run checks"])).toBe(1);
+    expect(stderr[0]).toContain("--max-runs requires --every");
+  });
+
   test("returns errors for missing arguments and invalid times", async () => {
     expect(await run(["add", "--session", "/tmp/session.jsonl", "--at", "not-a-time", "--message", "run checks"])).toBe(1);
     expect(stderr[0]).toContain("Could not parse scheduled time");

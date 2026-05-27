@@ -47,22 +47,22 @@ export async function deliverDueTasks(options: DeliverDueOptions = {}): Promise<
         const message = formatScheduledMessage({ ...task, deliveredAt: options.now?.() ?? Date.now() });
         const result = await exec(piBin, ["--session", task.sessionFile, "-p", message], { cwd: task.cwd });
         if (result.exitCode === 0) {
-          if (await store.markDelivered(task.id)) {
+          if (await store.markDelivered(task.id, workerId)) {
             summary.delivered += 1;
             return;
           }
 
-          await store.markFailed(task.id, "Task could not be marked delivered because it was no longer claimed.");
+          await store.markFailed(task.id, workerId, "Task could not be marked delivered because it was no longer claimed by this worker.");
           summary.failed += 1;
           return;
         }
 
         const error = result.stderr.trim() || result.stdout.trim() || `pi exited with code ${result.exitCode}`;
-        await store.markFailed(task.id, error);
+        await store.markFailed(task.id, workerId, error);
         summary.failed += 1;
       });
     } catch (error) {
-      await store.markFailed(task.id, error instanceof Error ? error.message : String(error));
+      await store.markFailed(task.id, workerId, error instanceof Error ? error.message : String(error));
       summary.failed += 1;
     }
   }

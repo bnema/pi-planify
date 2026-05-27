@@ -98,4 +98,8 @@ describe("buildSystemdUnits", () => {
     expect(units.timer).toContain("OnCalendar=*:0/1");
     expect(units.timer).toContain("Persistent=true");
   });
+
+  test("rejects non-absolute service executable paths", () => {
+    expect(() => buildSystemdUnits({ binPath: "pi-planify" })).toThrow(/absolute/);
+  });
 });

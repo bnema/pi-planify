@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "typebox";
 
@@ -10,6 +12,7 @@ import { parseWhen } from "../src/time.js";
 
 const TOOL_NAME = "planify";
 const STATUS_KEY = "pi-planify";
+const PLANIFY_BIN_PATH = fileURLToPath(new URL("../bin/pi-planify.mjs", import.meta.url));
 
 const PlanifyParamsSchema = Type.Object({
   when: Type.String({ description: "When to deliver the message, for example 'in 30m', 'in 2h', or an ISO timestamp." }),
@@ -80,7 +83,7 @@ export default function planifyExtension(pi: ExtensionAPI): void {
             ctx.ui.notify((await store().cancel(parsed.id)) ? `Cancelled ${parsed.id}` : `Could not cancel ${parsed.id}`, "info");
             return;
           case "install-service":
-            await installSystemdUserTimer({ binPath: "pi-planify" });
+            await installSystemdUserTimer({ binPath: PLANIFY_BIN_PATH });
             ctx.ui.notify("Installed and started pi-planify user timer.", "info");
             return;
           case "help":

@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 
 import { runCommand } from "./command-runner.js";
 
@@ -9,8 +9,9 @@ export interface SystemdUnitOptions {
 }
 
 export function buildSystemdUnits(options: SystemdUnitOptions): { service: string; timer: string } {
+  const binPath = requireAbsoluteBinPath(options.binPath);
   return {
-    service: `[Unit]\nDescription=Deliver due pi-planify scheduled messages\n\n[Service]\nType=oneshot\nExecStart=${options.binPath} run-due\n`,
+    service: `[Unit]\nDescription=Deliver due pi-planify scheduled messages\n\n[Service]\nType=oneshot\nExecStart=${binPath} run-due\n`,
     timer: `[Unit]\nDescription=Run pi-planify every minute\n\n[Timer]\nOnBootSec=1min\nOnCalendar=*:0/1\nPersistent=true\nUnit=pi-planify.service\n\n[Install]\nWantedBy=timers.target\n`,
   };
 }
@@ -23,4 +24,9 @@ export async function installSystemdUserTimer(options: SystemdUnitOptions): Prom
   await writeFile(join(dir, "pi-planify.timer"), units.timer, "utf8");
   await runCommand("systemctl", ["--user", "daemon-reload"], { cwd: process.cwd() });
   await runCommand("systemctl", ["--user", "enable", "--now", "pi-planify.timer"], { cwd: process.cwd() });
+}
+
+function requireAbsoluteBinPath(binPath: string): string {
+  if (!isAbsolute(binPath)) throw new Error(`pi-planify systemd service requires an absolute executable path, got: ${binPath}`);
+  return binPath;
 }

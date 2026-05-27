@@ -44,7 +44,7 @@ export async function deliverDueTasks(options: DeliverDueOptions = {}): Promise<
   for (const task of tasks) {
     try {
       await withSessionLock(rootDir, task, async () => {
-        const message = formatScheduledMessage(task);
+        const message = formatScheduledMessage({ ...task, deliveredAt: options.now?.() ?? Date.now() });
         const result = await exec(piBin, ["--session", task.sessionFile, "-p", message], { cwd: task.cwd });
         if (result.exitCode === 0) {
           await store.markDelivered(task.id);

@@ -109,6 +109,35 @@ describe("scheduled message formatting", () => {
       `[pi-planify scheduled message]\nIt is time to execute this scheduled task:\n\nrun the checks\n\nWhen finished, reply in this session with a short report stating whether the task succeeded or failed, plus any useful details.\n\nTask ID: task-123\nDue: 1970-01-01T00:00:02.000Z`,
     );
   });
+
+  test("keeps deliveries within the grace period as normal scheduled messages", () => {
+    const message = formatScheduledMessage({ id: "task-123", dueAt: 2_000, deliveredAt: 152_000, message: "run the checks" });
+
+    expect(message).toContain("[pi-planify scheduled message]");
+    expect(message).not.toContain("[pi-planify missed scheduled task]");
+  });
+
+  test("keeps deliveries exactly at the grace boundary as normal scheduled messages", () => {
+    const message = formatScheduledMessage({ id: "task-123", dueAt: 2_000, deliveredAt: 302_000, message: "run the checks" });
+
+    expect(message).toContain("[pi-planify scheduled message]");
+    expect(message).not.toContain("[pi-planify missed scheduled task]");
+  });
+
+  test("turns deliveries past the grace period into a missed-task prompt instead of the original instruction", () => {
+    const message = formatScheduledMessage({ id: "task-123", dueAt: 2_000, deliveredAt: 3_725_000, message: "run the checks" });
+
+    expect(message).toContain("[pi-planify missed scheduled task]");
+    expect(message).toContain("The scheduled time was missed by more than the allowed grace period.");
+    expect(message).toContain("Do not automatically execute the original task as if it were on time.");
+    expect(message).toContain("Delivered: 1970-01-01T01:02:05.000Z\nLate by: 1h 2m 3s");
+    expect(message).toContain("Original task:\n\nrun the checks");
+  });
+
+  test("formats missed-task late durations without zero-value trailing units", () => {
+    expect(formatScheduledMessage({ id: "task-123", dueAt: 2_000, deliveredAt: 602_000, message: "run the checks" })).toContain("Late by: 10m");
+    expect(formatScheduledMessage({ id: "task-123", dueAt: 2_000, deliveredAt: 3_602_000, message: "run the checks" })).toContain("Late by: 1h");
+  });
 });
 
 describe("parseWhen", () => {

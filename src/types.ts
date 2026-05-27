@@ -10,6 +10,9 @@ export interface PlanifyTask {
   message: string;
   status: PlanifyTaskStatus;
   attempts: number;
+  intervalMs?: number;
+  maxRuns?: number;
+  runCount: number;
   claimedAt?: number;
   claimedBy?: string;
   deliveredAt?: number;
@@ -21,4 +24,6 @@ export interface AddTaskInput {
   sessionFile: string;
   cwd: string;
   message: string;
+  intervalMs?: number;
+  maxRuns?: number;
 }

@@ -47,8 +47,13 @@ export async function deliverDueTasks(options: DeliverDueOptions = {}): Promise<
         const message = formatScheduledMessage({ ...task, deliveredAt: options.now?.() ?? Date.now() });
         const result = await exec(piBin, ["--session", task.sessionFile, "-p", message], { cwd: task.cwd });
         if (result.exitCode === 0) {
-          await store.markDelivered(task.id);
-          summary.delivered += 1;
+          if (await store.markDelivered(task.id)) {
+            summary.delivered += 1;
+            return;
+          }
+
+          await store.markFailed(task.id, "Task could not be marked delivered because it was no longer claimed.");
+          summary.failed += 1;
           return;
         }
 

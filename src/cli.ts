@@ -4,7 +4,7 @@ import { deliverDueTasks } from "./delivery.js";
 import { defaultPlanifyRoot } from "./paths.js";
 import { PlanifyStore } from "./store.js";
 import { installSystemdUserTimer } from "./systemd.js";
-import { parseWhen } from "./time.js";
+import { parseInterval, parseWhen } from "./time.js";
 
 interface ParsedArgs {
   command: string;
@@ -25,10 +25,21 @@ export async function runCli(argv: string[], options: { stdout?: (text: string) 
       case "add": {
         const sessionFile = requireFlag(parsed, "session");
         const cwd = parsed.flags.get("cwd") ?? process.cwd();
-        const at = requireFlag(parsed, "at");
+        const at = parsed.flags.get("at");
+        const every = parsed.flags.get("every");
+        if (!at && !every) throw new Error("Missing --at or --every.");
+        const intervalMs = every === undefined ? undefined : parseInterval(every);
+        const maxRuns = parseOptionalPositiveInteger(parsed.flags.get("max-runs"), "max-runs");
         const message = parsed.flags.get("message") ?? parsed.positionals.join(" ");
         if (!message.trim()) throw new Error("Missing --message or positional message.");
-        const task = await store.add({ dueAt: parseWhen(at), sessionFile, cwd, message });
+        const task = await store.add({
+          dueAt: at ? parseWhen(at) : Date.now() + (intervalMs ?? 0),
+          sessionFile,
+          cwd,
+          message,
+          intervalMs,
+          maxRuns,
+        });
         out(`Scheduled ${task.id} for ${new Date(task.dueAt).toISOString()}`);
         return 0;
       }
@@ -95,6 +106,13 @@ function requireFlag(args: ParsedArgs, name: string): string {
   return value;
 }
 
+function parseOptionalPositiveInteger(value: string | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`--${name} must be a positive integer.`);
+  return parsed;
+}
+
 function helpText(): string {
-  return `pi-planify\n\nCommands:\n  add --session <file> --at <when> [--cwd <dir>] --message <text>\n  list\n  cancel <task-id>\n  run-due\n  install-service [--bin <path>]`;
+  return `pi-planify\n\nCommands:\n  add --session <file> (--at <when> | --every <interval>) [--every <interval>] [--max-runs <count>] [--cwd <dir>] --message <text>\n  list\n  cancel <task-id>\n  run-due\n  install-service [--bin <path>]`;
 }

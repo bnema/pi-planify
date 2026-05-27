@@ -7,6 +7,11 @@ describe("parsePlanifyCommand", () => {
     expect(parsePlanifyCommand('in 15m "run the checks"')).toEqual({ action: "add", when: "in 15m", message: "run the checks" });
   });
 
+  test("parses recurring add commands", () => {
+    expect(parsePlanifyCommand('every 1h "run the checks"')).toEqual({ action: "add", every: "1h", message: "run the checks" });
+    expect(parsePlanifyCommand('in 10m every 1h max 3 "run the checks"')).toEqual({ action: "add", when: "in 10m", every: "1h", maxRuns: 3, message: "run the checks" });
+  });
+
   test("parses list and cancel commands", () => {
     expect(parsePlanifyCommand("list")).toEqual({ action: "list" });
     expect(parsePlanifyCommand("cancel task-123")).toEqual({ action: "cancel", id: "task-123" });

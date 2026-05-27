@@ -58,6 +58,55 @@ describe("deliverDueTasks", () => {
     expect((await store.get("task-1"))?.lastError).toContain("boom");
   });
 
+  test("delivers one due recurring occurrence and reschedules the next one", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests", intervalMs: 3_600_000 });
+
+    const result = await deliverDueTasks({
+      store,
+      now: () => 10_000,
+      workerId: "worker-1",
+      exec: async () => ({ exitCode: 0, stdout: "ok", stderr: "" }),
+    });
+
+    expect(result.delivered).toBe(1);
+    expect(await store.get("task-1")).toEqual(expect.objectContaining({ status: "scheduled", dueAt: 3_610_000, runCount: 1 }));
+  });
+
+  test("keeps recurring tasks failed when delivery fails", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests", intervalMs: 3_600_000 });
+
+    const result = await deliverDueTasks({
+      store,
+      now: () => 10_000,
+      workerId: "worker-1",
+      exec: async () => ({ exitCode: 2, stdout: "", stderr: "boom" }),
+    });
+
+    expect(result.failed).toBe(1);
+    expect(await store.get("task-1")).toEqual(expect.objectContaining({ status: "failed", dueAt: 9_000, runCount: 0, lastError: "boom" }));
+  });
+
+  test("counts delivery as failed when a claimed task cannot be marked delivered", async () => {
+    const task = { id: "task-1", dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests" };
+    const store = {
+      claimDue: async () => [task],
+      markDelivered: async () => false,
+      markFailed: async () => true,
+    } as unknown as PlanifyStore;
+
+    const result = await deliverDueTasks({
+      store,
+      rootDir: dir,
+      now: () => 10_000,
+      workerId: "worker-1",
+      exec: async () => ({ exitCode: 0, stdout: "ok", stderr: "" }),
+    });
+
+    expect(result).toEqual({ claimed: 1, delivered: 0, failed: 1 });
+  });
+
   test("serializes concurrent deliveries to the same session", async () => {
     let nextId = 0;
     const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => `task-${nextId++}` });

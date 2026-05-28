@@ -1,14 +1,15 @@
 # pi-planify
 
-`pi-planify` is a global user-level scheduler task planifier plugin for Pi (Linux/systend only).
+`pi-planify` schedules follow-up messages for Pi sessions.
 
-```bash
-pi --session <session-file> -p "<scheduled message>"
-```
+It supports two delivery modes:
 
-## Pi surfaces
+- **Live delivery** for reminders created from an open Pi session with `/planify` or the `planify` tool. The reminder returns as a visible user message in that session.
+- **Headless delivery** for tasks created with the `pi-planify` CLI. The worker starts a non-interactive Pi process for the target session.
 
-Slash command:
+## Scheduling from Pi
+
+Use `/planify` when you want the reminder to come back into the session you are using now.
 
 ```text
 /planify in 30m "check the test results"
@@ -19,21 +20,19 @@ Slash command:
 /planify install-service
 ```
 
-LLM tool: `planify`
-
-Supported tool fields:
+The LLM can also schedule reminders with the `planify` tool. Supported fields:
 
 - `when` — `in 30m`, `in 2h`, or an ISO timestamp. Optional when `every` is set.
 - `every` — recurring interval like `30m`, `1h`, or `1d`. Without `when`, the first run happens after one interval.
 - `maxRuns` — maximum successful deliveries for a recurring task. Omit to repeat until cancelled.
-- `message` — plain scheduled message
-- `title`
-- `objective`
-- `context`
-- `steps`
-- `acceptanceCriteria`
+- `message` — plain scheduled message.
+- `title`, `objective`, `context`, `steps`, `acceptanceCriteria` — structured task fields.
 
-## CLI
+Live tasks are tied to the session file that scheduled them. The Pi extension delivers due live tasks while that session is open. If the session is closed at the due time, the task remains scheduled and is delivered when the session is opened again.
+
+## Scheduling from the CLI
+
+Use the CLI when you want a background worker to run the task without an open Pi TUI.
 
 ```bash
 pi-planify add --session <file> --cwd <dir> --at <when> --message <text>
@@ -44,18 +43,28 @@ pi-planify run-due
 pi-planify install-service
 ```
 
-`run-due` is intended to be called by the installed systemd user timer.
+CLI `add` creates headless tasks. `run-due` delivers due headless tasks by running:
 
-## Reliability model
+```bash
+pi --session <session-file> -p "<scheduled message>"
+```
 
-- Tasks are stored in a global user queue under `~/.pi/agent/planify/`.
-- The systemd user timer uses `Persistent=true`, so missed runs after sleep/reboot are caught up.
-- Claimed tasks are recovered if a worker crashes before delivery completes.
-- Store writes and per-session deliveries are protected by stale-aware lock directories.
-- Delivery status transitions are guarded: scheduled tasks are claimed, then marked delivered or failed.
-- Recurring tasks are rescheduled only after successful delivery. Failed recurring tasks stay failed instead of looping silently.
+`install-service` installs a systemd user timer that runs `pi-planify run-due` every minute.
+
+## Delivery behavior
+
+- Live delivery uses the active Pi extension and `pi.sendUserMessage(...)`.
+- Headless delivery uses `pi-planify run-due` and a non-interactive `pi -p` process.
+- Each delivery first claims a scheduled task, then marks it delivered or failed.
+- Live and headless delivery use the same per-session lock, so deliveries for the same session are serialized.
+- Recurring tasks are rescheduled only after successful delivery.
+- Failed recurring tasks stay failed instead of looping silently.
 - `maxRuns` counts successful deliveries only.
 
-## Storage
+## Storage and recovery
 
-Each task records its target session file, cwd, due time, message, status, attempts, recurrence settings, successful run count, and delivery errors.
+Tasks are stored in a global user queue under `~/.pi/agent/planify/`.
+
+Each task records its target session file, cwd, due time, message, delivery mode, status, attempts, recurrence settings, successful run count, and delivery errors.
+
+Claimed tasks are recovered if a live session or headless worker exits before delivery completes. The systemd timer uses `Persistent=true`, so missed headless runs after sleep or reboot are caught up.

@@ -38,6 +38,7 @@ export async function runCli(argv: string[], options: { stdout?: (text: string) 
           sessionFile,
           cwd,
           message,
+          deliveryMode: "headless",
           intervalMs,
           maxRuns,
         });

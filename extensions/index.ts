@@ -4,6 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type, type Static } from "typebox";
 
 import { parsePlanifyCommand } from "../src/command.js";
+import { deliverLiveDueTasks } from "../src/live-delivery.js";
 import { defaultPlanifyRoot } from "../src/paths.js";
 import { PlanifyStore } from "../src/store.js";
 import { buildScheduledTaskMessage } from "../src/structured-task.js";
@@ -13,6 +14,7 @@ import { parseInterval, parseWhen } from "../src/time.js";
 const TOOL_NAME = "planify";
 const STATUS_KEY = "pi-planify";
 const PLANIFY_BIN_PATH = fileURLToPath(new URL("../bin/pi-planify.mjs", import.meta.url));
+const MAX_LIVE_TIMER_DELAY_MS = 2_147_483_647;
 
 const PlanifyParamsSchema = Type.Object({
   when: Type.Optional(Type.String({ description: "When to deliver the first message, for example 'in 30m', 'in 2h', or an ISO timestamp. Optional when every is set." })),
@@ -89,6 +91,66 @@ function helpText(): string {
 }
 
 export default function planifyExtension(pi: ExtensionAPI): void {
+  let liveTimer: ReturnType<typeof setTimeout> | undefined;
+  let liveDeliveryInFlight = false;
+  let rescheduleLiveScheduler: (() => void) | undefined;
+
+  const stopLiveScheduler = () => {
+    if (liveTimer !== undefined) clearTimeout(liveTimer);
+    liveTimer = undefined;
+    liveDeliveryInFlight = false;
+    rescheduleLiveScheduler = undefined;
+  };
+
+  const startLiveScheduler = (ctx: ExtensionContext) => {
+    stopLiveScheduler();
+    if (!ctx.hasUI) return;
+    const sessionFile = ctx.sessionManager.getSessionFile();
+    if (!sessionFile) return;
+
+    const scheduleNext = async () => {
+      if (liveTimer !== undefined) clearTimeout(liveTimer);
+      liveTimer = undefined;
+
+      const tasks = await store().list();
+      const now = Date.now();
+      const nextDueAt = tasks
+        .filter((task) => task.status === "scheduled" && task.deliveryMode === "live" && task.sessionFile === sessionFile)
+        .reduce<number | undefined>((earliest, task) => earliest === undefined ? task.dueAt : Math.min(earliest, task.dueAt), undefined);
+
+      if (nextDueAt === undefined) return;
+      const delay = Math.max(0, Math.min(nextDueAt - now, MAX_LIVE_TIMER_DELAY_MS));
+      liveTimer = setTimeout(() => {
+        void deliverAndReschedule();
+      }, delay);
+    };
+
+    const deliverAndReschedule = async () => {
+      if (liveDeliveryInFlight) return;
+      liveDeliveryInFlight = true;
+      try {
+        const summary = await deliverLiveDueTasks({
+          sessionFile,
+          sendUserMessage: (message, options) => pi.sendUserMessage(message, options),
+        });
+        if (summary.delivered > 0) ctx.ui.setStatus(STATUS_KEY, `delivered ${summary.delivered} scheduled task${summary.delivered === 1 ? "" : "s"}`);
+      } catch (error) {
+        ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
+      } finally {
+        liveDeliveryInFlight = false;
+        await scheduleNext();
+      }
+    };
+
+    rescheduleLiveScheduler = () => {
+      void scheduleNext();
+    };
+    void deliverAndReschedule();
+  };
+
+  pi.on("session_start", (_event, ctx) => startLiveScheduler(ctx));
+  pi.on("session_shutdown", stopLiveScheduler);
+
   pi.registerCommand("planify", {
     description: "Schedule a message for reliable future delivery into this Pi session.",
     handler: async (args, ctx) => {
@@ -99,6 +161,7 @@ export default function planifyExtension(pi: ExtensionAPI): void {
             const message = await schedule(ctx, parsed);
             ctx.ui.notify(message, "info");
             ctx.ui.setStatus(STATUS_KEY, "scheduled message");
+            rescheduleLiveScheduler?.();
             return;
           }
           case "list":
@@ -106,6 +169,7 @@ export default function planifyExtension(pi: ExtensionAPI): void {
             return;
           case "cancel":
             ctx.ui.notify((await store().cancel(parsed.id)) ? `Cancelled ${parsed.id}` : `Could not cancel ${parsed.id}`, "info");
+            rescheduleLiveScheduler?.();
             return;
           case "install-service":
             await installSystemdUserTimer({ binPath: PLANIFY_BIN_PATH });
@@ -137,6 +201,7 @@ export default function planifyExtension(pi: ExtensionAPI): void {
     async execute(_toolCallId, params: PlanifyParams, _signal, _onUpdate, ctx) {
       const scheduledMessage = buildScheduledTaskMessage(params);
       const message = await schedule(ctx, { when: params.when, every: params.every, maxRuns: params.maxRuns, message: scheduledMessage });
+      rescheduleLiveScheduler?.();
       return { content: [{ type: "text", text: message }], details: { scheduled: true } };
     },
   });

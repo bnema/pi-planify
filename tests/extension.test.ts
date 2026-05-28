@@ -12,6 +12,7 @@ type RegisteredTool = { execute: (toolCallId: string, params: Record<string, unk
 
 type FakeContext = {
   cwd: string;
+  hasUI: boolean;
   sessionManager: { getSessionFile: () => string };
   ui: { notifications: string[]; statuses: string[]; notify: (message: string) => void; setStatus: (_key: string, text: string) => void };
 };
@@ -35,12 +36,15 @@ function setup() {
   const commands = new Map<string, RegisteredCommand>();
   const tools = new Map<string, RegisteredTool>();
   planifyExtension({
+    on: () => undefined,
+    sendUserMessage: () => undefined,
     registerCommand: (name: string, command: RegisteredCommand) => commands.set(name, command),
     registerTool: (tool: RegisteredTool & { name: string }) => tools.set(tool.name, tool),
   } as never);
 
   const ctx: FakeContext = {
     cwd: "/tmp/project",
+    hasUI: false,
     sessionManager: { getSessionFile: () => "/tmp/session.jsonl" },
     ui: {
       notifications: [],

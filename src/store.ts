@@ -40,6 +40,7 @@ export class PlanifyStore {
         cwd: input.cwd,
         message: input.message,
         status: "scheduled",
+        deliveryMode: input.deliveryMode ?? "live",
         attempts: 0,
         intervalMs: input.intervalMs,
         maxRuns: input.maxRuns,
@@ -88,7 +89,7 @@ export class PlanifyStore {
     });
   }
 
-  async claimDue(options: { limit: number; workerId: string; staleClaimMs?: number }): Promise<PlanifyTask[]> {
+  async claimDue(options: { limit: number; workerId: string; staleClaimMs?: number; sessionFile?: string; deliveryMode?: PlanifyTask["deliveryMode"] }): Promise<PlanifyTask[]> {
     return await this.withStoreLock(async () => {
       const file = await this.readFile();
       let changed = false;
@@ -101,6 +102,8 @@ export class PlanifyStore {
       for (const task of file.tasks) {
         if (claimed.length >= options.limit) break;
         if (task.status !== "scheduled" || task.dueAt > timestamp) continue;
+        if (options.sessionFile !== undefined && task.sessionFile !== options.sessionFile) continue;
+        if (options.deliveryMode !== undefined && task.deliveryMode !== options.deliveryMode) continue;
 
         task.status = "claimed";
         task.claimedAt = timestamp;
@@ -178,7 +181,7 @@ export class PlanifyStore {
     try {
       const raw = await readFile(this.dbPath, "utf8");
       const parsed = JSON.parse(raw) as StoreFile;
-      const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.map((task) => ({ ...task, runCount: task.runCount ?? 0 })) : [];
+      const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.map((task) => ({ ...task, deliveryMode: task.deliveryMode ?? "live", runCount: task.runCount ?? 0 })) : [];
       return { version: 1, tasks };
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {

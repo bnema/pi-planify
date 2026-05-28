@@ -1,12 +1,11 @@
-import { join } from "node:path";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { type CommandResult, type CommandRunner, runCommand } from "./command-runner.js";
-import { withLock } from "./lock.js";
+import { withSessionLock } from "./lock.js";
 import { formatScheduledMessage } from "./message.js";
 import { defaultPlanifyRoot } from "./paths.js";
 import { PlanifyStore } from "./store.js";
-import type { PlanifyTask } from "./types.js";
+import type { DeliverySummary } from "./types.js";
 
 export type ExecResult = CommandResult;
 export type ExecFn = CommandRunner;
@@ -22,12 +21,6 @@ export interface DeliverDueOptions {
   exec?: ExecFn;
 }
 
-export interface DeliverySummary {
-  claimed: number;
-  delivered: number;
-  failed: number;
-}
-
 export async function deliverDueTasks(options: DeliverDueOptions = {}): Promise<DeliverySummary> {
   const rootDir = options.rootDir ?? defaultPlanifyRoot();
   const store = options.store ?? new PlanifyStore({ rootDir, now: options.now });
@@ -38,6 +31,7 @@ export async function deliverDueTasks(options: DeliverDueOptions = {}): Promise<
     limit: options.limit ?? 10,
     workerId,
     staleClaimMs: options.staleClaimMs ?? 15 * 60_000,
+    deliveryMode: "headless",
   });
   const summary: DeliverySummary = { claimed: tasks.length, delivered: 0, failed: 0 };
 
@@ -68,9 +62,4 @@ export async function deliverDueTasks(options: DeliverDueOptions = {}): Promise<
   }
 
   return summary;
-}
-
-async function withSessionLock<T>(rootDir: string, task: PlanifyTask, run: () => Promise<T>): Promise<T> {
-  const digest = createHash("sha256").update(task.sessionFile).digest("hex").slice(0, 32);
-  return await withLock(join(rootDir, "locks", `${digest}.lock`), run);
 }

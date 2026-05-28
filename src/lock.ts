@@ -1,6 +1,9 @@
+import { createHash } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+
+import type { PlanifyTask } from "./types.js";
 
 export interface LockOptions {
   staleMs?: number;
@@ -9,6 +12,11 @@ export interface LockOptions {
 
 const DEFAULT_STALE_MS = 15 * 60_000;
 const DEFAULT_RETRY_MS = 25;
+
+export async function withSessionLock<T>(rootDir: string, task: Pick<PlanifyTask, "sessionFile">, run: () => Promise<T>): Promise<T> {
+  const digest = createHash("sha256").update(task.sessionFile).digest("hex").slice(0, 32);
+  return await withLock(join(rootDir, "locks", `${digest}.lock`), run);
+}
 
 export async function withLock<T>(lockDir: string, run: () => Promise<T>, options: LockOptions = {}): Promise<T> {
   await mkdir(dirname(lockDir), { recursive: true });

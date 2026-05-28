@@ -21,7 +21,7 @@ afterEach(async () => {
 describe("deliverDueTasks", () => {
   test("runs pi with the target session and marks delivered on success", async () => {
     const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
-    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests", deliveryMode: "headless" });
     const calls: Array<{ command: string; args: string[]; cwd: string }> = [];
 
     const result = await deliverDueTasks({
@@ -44,7 +44,7 @@ describe("deliverDueTasks", () => {
 
   test("marks failed when pi exits non-zero", async () => {
     const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
-    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests", deliveryMode: "headless" });
 
     const result = await deliverDueTasks({
       store,
@@ -60,7 +60,7 @@ describe("deliverDueTasks", () => {
 
   test("delivers one due recurring occurrence and reschedules the next one", async () => {
     const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
-    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests", intervalMs: 3_600_000 });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests", intervalMs: 3_600_000, deliveryMode: "headless" });
 
     const result = await deliverDueTasks({
       store,
@@ -75,7 +75,7 @@ describe("deliverDueTasks", () => {
 
   test("keeps recurring tasks failed when delivery fails", async () => {
     const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
-    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests", intervalMs: 3_600_000 });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "run tests", intervalMs: 3_600_000, deliveryMode: "headless" });
 
     const result = await deliverDueTasks({
       store,
@@ -110,8 +110,8 @@ describe("deliverDueTasks", () => {
   test("serializes concurrent deliveries to the same session", async () => {
     let nextId = 0;
     const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => `task-${nextId++}` });
-    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "first" });
-    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "second" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "first", deliveryMode: "headless" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/session.jsonl", cwd: "/tmp/project", message: "second", deliveryMode: "headless" });
     let active = 0;
     let maxActive = 0;
     let firstExecStarted: (() => void) | undefined;

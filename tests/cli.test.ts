@@ -49,7 +49,7 @@ describe("runCli", () => {
     expect(await run(["add", "--session", "/tmp/session.jsonl", "--cwd", "/tmp/project", "--every", "1h", "--max-runs", "3", "--message", "run checks"])).toBe(0);
 
     const [task] = await new PlanifyStore({ rootDir: dir }).list();
-    expect(task).toEqual(expect.objectContaining({ intervalMs: 3_600_000, maxRuns: 3, runCount: 0 }));
+    expect(task).toEqual(expect.objectContaining({ deliveryMode: "headless", intervalMs: 3_600_000, maxRuns: 3, runCount: 0 }));
     expect(task.dueAt).toBeGreaterThanOrEqual(before + 3_600_000);
     expect(task.dueAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
   });

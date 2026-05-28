@@ -8,14 +8,16 @@ import { defaultPlanifyRoot } from "../src/paths.js";
 import { PlanifyStore } from "../src/store.js";
 import { buildScheduledTaskMessage } from "../src/structured-task.js";
 import { installSystemdUserTimer } from "../src/systemd.js";
-import { parseWhen } from "../src/time.js";
+import { parseInterval, parseWhen } from "../src/time.js";
 
 const TOOL_NAME = "planify";
 const STATUS_KEY = "pi-planify";
 const PLANIFY_BIN_PATH = fileURLToPath(new URL("../bin/pi-planify.mjs", import.meta.url));
 
 const PlanifyParamsSchema = Type.Object({
-  when: Type.String({ description: "When to deliver the message, for example 'in 30m', 'in 2h', or an ISO timestamp." }),
+  when: Type.Optional(Type.String({ description: "When to deliver the first message, for example 'in 30m', 'in 2h', or an ISO timestamp. Optional when every is set." })),
+  every: Type.Optional(Type.String({ description: "Recurring interval, for example '30m', '1h', or '1d'. If when is omitted, the first run happens after one interval." })),
+  maxRuns: Type.Optional(Type.Integer({ description: "Maximum number of successful recurring deliveries. Omit for indefinite recurrence until cancelled." })),
   message: Type.Optional(Type.String({ description: "Plain message to deliver. Use structured fields instead when the task has objective/context/steps." })),
   title: Type.Optional(Type.String({ description: "Short task title for the future agent turn." })),
   objective: Type.Optional(Type.String({ description: "Concrete outcome the future agent should achieve." })),
@@ -36,12 +38,18 @@ function requireSessionFile(ctx: ExtensionContext): string {
   return sessionFile;
 }
 
-async function schedule(ctx: ExtensionContext, when: string, message: string): Promise<string> {
+async function schedule(ctx: ExtensionContext, options: { when?: string; every?: string; maxRuns?: number; message: string }): Promise<string> {
+  if (!options.when && !options.every) throw new Error("Missing when or every.");
+  const intervalMs = options.every === undefined ? undefined : parseInterval(options.every);
+  const maxRuns = validateOptionalPositiveInteger(options.maxRuns, "maxRuns");
+  if (intervalMs === undefined && maxRuns !== undefined) throw new Error("maxRuns requires every.");
   const task = await store().add({
-    dueAt: parseWhen(when),
+    dueAt: options.when ? parseWhen(options.when) : Date.now() + (intervalMs ?? 0),
     sessionFile: requireSessionFile(ctx),
     cwd: ctx.cwd,
-    message,
+    message: options.message,
+    intervalMs,
+    maxRuns,
   });
   return `Scheduled ${task.id} for ${new Date(task.dueAt).toISOString()}`;
 }
@@ -50,13 +58,30 @@ async function listTasks(): Promise<string> {
   const tasks = await store().list();
   const active = tasks.filter((task) => task.status === "scheduled" || task.status === "claimed");
   if (active.length === 0) return "No active pi-planify tasks.";
-  return active.map((task) => `${task.id} · ${task.status} · ${new Date(task.dueAt).toISOString()} · ${task.message}`).join("\n");
+  return active.map((task) => {
+    const recurrence = task.intervalMs === undefined ? "" : ` · every ${formatInterval(task.intervalMs)}${task.maxRuns === undefined ? "" : ` · ${task.runCount}/${task.maxRuns} runs`}`;
+    return `${task.id} · ${task.status} · ${new Date(task.dueAt).toISOString()}${recurrence} · ${task.message}`;
+  }).join("\n");
+}
+
+function validateOptionalPositiveInteger(value: number | undefined, name: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${name} must be a positive integer.`);
+  return value;
+}
+
+function formatInterval(intervalMs: number): string {
+  if (intervalMs % 86_400_000 === 0) return `${intervalMs / 86_400_000}d`;
+  if (intervalMs % 3_600_000 === 0) return `${intervalMs / 3_600_000}h`;
+  return `${intervalMs / 60_000}m`;
 }
 
 function helpText(): string {
   return [
     "Usage:",
     '/planify in 30m "check the test results"',
+    '/planify every 1h "check the test results"',
+    '/planify in 10m every 1h max 5 "check the test results"',
     "/planify list",
     "/planify cancel <task-id>",
     "/planify install-service",
@@ -71,7 +96,7 @@ export default function planifyExtension(pi: ExtensionAPI): void {
         const parsed = parsePlanifyCommand(args);
         switch (parsed.action) {
           case "add": {
-            const message = await schedule(ctx, parsed.when, parsed.message);
+            const message = await schedule(ctx, parsed);
             ctx.ui.notify(message, "info");
             ctx.ui.setStatus(STATUS_KEY, "scheduled message");
             return;
@@ -104,13 +129,14 @@ export default function planifyExtension(pi: ExtensionAPI): void {
     promptGuidelines: [
       "Use planify only when the user explicitly asks to schedule, remind later, or run something at a future time.",
       "The planify tool always schedules a user message into the current Pi session; do not ask the user to choose reminder versus auto-run modes.",
+      "For recurring tasks, set every to an interval such as '1h' and optionally maxRuns to limit successful deliveries.",
       "For multi-step tasks, prefer structured fields: title, objective, context, steps, and acceptanceCriteria instead of cramming everything into message.",
       "Prefer concise scheduled messages that include enough context for the future agent turn to act correctly.",
     ],
     parameters: PlanifyParamsSchema,
     async execute(_toolCallId, params: PlanifyParams, _signal, _onUpdate, ctx) {
       const scheduledMessage = buildScheduledTaskMessage(params);
-      const message = await schedule(ctx, params.when, scheduledMessage);
+      const message = await schedule(ctx, { when: params.when, every: params.every, maxRuns: params.maxRuns, message: scheduledMessage });
       return { content: [{ type: "text", text: message }], details: { scheduled: true } };
     },
   });

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { PlanifyStore } from "../src/store.js";
 import { formatScheduledMessage } from "../src/message.js";
-import { parseWhen } from "../src/time.js";
+import { parseInterval, parseWhen } from "../src/time.js";
 
 let dir: string;
 
@@ -41,6 +41,22 @@ describe("PlanifyStore", () => {
         attempts: 0,
       }),
     ]);
+  });
+
+  test("persists recurring task options", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 1_000, createId: () => "task-1" });
+
+    await store.add({
+      dueAt: 3_601_000,
+      sessionFile: "/tmp/session.jsonl",
+      cwd: "/tmp/project",
+      message: "review the pending changes",
+      intervalMs: 3_600_000,
+      maxRuns: 3,
+    });
+
+    const task = await new PlanifyStore({ rootDir: dir }).get("task-1");
+    expect(task).toEqual(expect.objectContaining({ intervalMs: 3_600_000, maxRuns: 3, runCount: 0 }));
   });
 
   test("serializes concurrent writes so scheduled tasks are not lost", async () => {
@@ -97,9 +113,77 @@ describe("PlanifyStore", () => {
     await store.add({ dueAt: 20_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "later" });
     await store.cancel("task-1");
 
-    expect(await store.markDelivered("task-1")).toBe(false);
-    expect(await store.markFailed("task-1", "boom")).toBe(false);
+    expect(await store.markDelivered("task-1", "worker-1")).toBe(false);
+    expect(await store.markFailed("task-1", "worker-1", "boom")).toBe(false);
     expect((await store.get("task-1"))?.status).toBe("cancelled");
+  });
+
+  test("reschedules recurring tasks after successful delivery", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "repeat", intervalMs: 3_600_000 });
+    await store.claimDue({ limit: 1, workerId: "worker-1" });
+
+    expect(await store.markDelivered("task-1", "worker-1")).toBe(true);
+
+    const task = await store.get("task-1");
+    expect(task).toEqual(expect.objectContaining({
+      status: "scheduled",
+      dueAt: 3_610_000,
+      runCount: 1,
+      attempts: 0,
+      deliveredAt: 10_000,
+    }));
+    expect(task?.claimedAt).toBeUndefined();
+    expect(task?.claimedBy).toBeUndefined();
+  });
+
+  test("marks recurring tasks delivered when maxRuns is reached", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "repeat", intervalMs: 3_600_000, maxRuns: 1 });
+    await store.claimDue({ limit: 1, workerId: "worker-1" });
+
+    expect(await store.markDelivered("task-1", "worker-1")).toBe(true);
+
+    expect(await store.get("task-1")).toEqual(expect.objectContaining({
+      status: "delivered",
+      runCount: 1,
+      deliveredAt: 10_000,
+    }));
+  });
+
+  test("marks failed recurring tasks failed without rescheduling or keeping claim metadata", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "repeat", intervalMs: 3_600_000 });
+    await store.claimDue({ limit: 1, workerId: "worker-1" });
+
+    expect(await store.markFailed("task-1", "worker-1", "boom")).toBe(true);
+
+    const task = await store.get("task-1");
+    expect(task).toEqual(expect.objectContaining({
+      status: "failed",
+      dueAt: 9_000,
+      runCount: 0,
+      lastError: "boom",
+    }));
+    expect(task?.claimedAt).toBeUndefined();
+    expect(task?.claimedBy).toBeUndefined();
+  });
+
+  test("does not let a stale worker mutate a task claimed by another worker", async () => {
+    const store = new PlanifyStore({ rootDir: dir, now: () => 10_000, createId: () => "task-1" });
+    await store.add({ dueAt: 9_000, sessionFile: "/tmp/a.jsonl", cwd: "/a", message: "repeat" });
+    await store.claimDue({ limit: 1, workerId: "worker-2" });
+
+    expect(await store.markDelivered("task-1", "worker-1")).toBe(false);
+    expect(await store.markFailed("task-1", "worker-1", "stale failure")).toBe(false);
+
+    const task = await store.get("task-1");
+    expect(task).toEqual(expect.objectContaining({
+      status: "claimed",
+      claimedBy: "worker-2",
+    }));
+    expect(task?.deliveredAt).toBeUndefined();
+    expect(task?.lastError).toBeUndefined();
   });
 });
 
@@ -148,5 +232,18 @@ describe("parseWhen", () => {
 
   test("parses ISO timestamps", () => {
     expect(parseWhen("2026-05-26T12:00:00.000Z", 1_000)).toBe(Date.parse("2026-05-26T12:00:00.000Z"));
+  });
+});
+
+describe("parseInterval", () => {
+  test("parses recurring intervals", () => {
+    expect(parseInterval("30m")).toBe(1_800_000);
+    expect(parseInterval("1h")).toBe(3_600_000);
+    expect(parseInterval("2d")).toBe(172_800_000);
+  });
+
+  test("rejects invalid intervals", () => {
+    expect(() => parseInterval("in 1h")).toThrow(/Could not parse interval/);
+    expect(() => parseInterval("0h")).toThrow(/Invalid duration amount/);
   });
 });

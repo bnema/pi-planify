@@ -41,6 +41,9 @@ export class PlanifyStore {
         message: input.message,
         status: "scheduled",
         attempts: 0,
+        intervalMs: input.intervalMs,
+        maxRuns: input.maxRuns,
+        runCount: 0,
       };
       file.tasks.push(task);
       await this.writeFile(file);
@@ -113,28 +116,40 @@ export class PlanifyStore {
     });
   }
 
-  async markDelivered(id: string): Promise<boolean> {
-    return await this.updateClaimedTask(id, (task, now) => {
-      task.status = "delivered";
+  async markDelivered(id: string, owner: string): Promise<boolean> {
+    return await this.updateClaimedTask(id, owner, (task, now) => {
+      task.runCount = (task.runCount ?? 0) + 1;
       task.deliveredAt = now;
       task.updatedAt = now;
       task.lastError = undefined;
+      task.claimedAt = undefined;
+      task.claimedBy = undefined;
+
+      if (task.intervalMs !== undefined && (task.maxRuns === undefined || task.runCount < task.maxRuns)) {
+        task.status = "scheduled";
+        task.dueAt = now + task.intervalMs;
+        task.attempts = 0;
+      } else {
+        task.status = "delivered";
+      }
     });
   }
 
-  async markFailed(id: string, error: string): Promise<boolean> {
-    return await this.updateClaimedTask(id, (task, now) => {
+  async markFailed(id: string, owner: string, error: string): Promise<boolean> {
+    return await this.updateClaimedTask(id, owner, (task, now) => {
       task.status = "failed";
       task.lastError = error;
       task.updatedAt = now;
+      task.claimedAt = undefined;
+      task.claimedBy = undefined;
     });
   }
 
-  private async updateClaimedTask(id: string, update: (task: PlanifyTask, now: number) => void): Promise<boolean> {
+  private async updateClaimedTask(id: string, owner: string, update: (task: PlanifyTask, now: number) => void): Promise<boolean> {
     return await this.withStoreLock(async () => {
       const file = await this.readFile();
       const task = file.tasks.find((candidate) => candidate.id === id);
-      if (!task || task.status !== "claimed") return false;
+      if (!task || task.status !== "claimed" || task.claimedBy !== owner) return false;
       update(task, this.now());
       await this.writeFile(file);
       return true;
@@ -163,7 +178,8 @@ export class PlanifyStore {
     try {
       const raw = await readFile(this.dbPath, "utf8");
       const parsed = JSON.parse(raw) as StoreFile;
-      return { version: 1, tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [] };
+      const tasks = Array.isArray(parsed.tasks) ? parsed.tasks.map((task) => ({ ...task, runCount: task.runCount ?? 0 })) : [];
+      return { version: 1, tasks };
     } catch (error) {
       if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
         return { version: 1, tasks: [] };

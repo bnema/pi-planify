@@ -1,5 +1,5 @@
 export type ParsedPlanifyCommand =
-  | { action: "add"; when: string; message: string }
+  | { action: "add"; when?: string; every?: string; maxRuns?: number; message: string }
   | { action: "list" }
   | { action: "cancel"; id: string }
   | { action: "install-service" }
@@ -17,14 +17,48 @@ export function parsePlanifyCommand(input: string): ParsedPlanifyCommand {
   }
 
   const parts = splitCommand(trimmed);
-  if (parts[0] === "in" && parts.length >= 3) {
-    return { action: "add", when: `${parts[0]} ${parts[1]}`, message: parts.slice(2).join(" ") };
-  }
-  if (parts.length >= 2) {
-    return { action: "add", when: parts[0], message: parts.slice(1).join(" ") };
+  const parsed = parseAddParts(parts);
+  if (parsed) return parsed;
+
+  throw new Error("Usage: /planify in 15m \"message\", /planify every 1h \"message\", or /planify in 10m every 1h max 5 \"message\"");
+}
+
+function parseAddParts(parts: string[]): ParsedPlanifyCommand | undefined {
+  if (parts.length < 2) return undefined;
+
+  let index = 0;
+  let when: string | undefined;
+  let every: string | undefined;
+  let maxRuns: number | undefined;
+
+  if (parts[index] === "in" && parts[index + 1]) {
+    when = `${parts[index]} ${parts[index + 1]}`;
+    index += 2;
+  } else if (parts[index] !== "every") {
+    when = parts[index];
+    index += 1;
   }
 
-  throw new Error("Usage: /planify in 15m \"message\"");
+  if (parts[index] === "every" && parts[index + 1]) {
+    every = parts[index + 1];
+    index += 2;
+  }
+
+  if ((parts[index] === "max" || parts[index] === "max-runs" || parts[index] === "maxRuns") && parts[index + 1]) {
+    maxRuns = Number(parts[index + 1]);
+    if (!Number.isSafeInteger(maxRuns) || maxRuns <= 0) throw new Error("maxRuns must be a positive integer.");
+    index += 2;
+  }
+
+  const message = parts.slice(index).join(" ");
+  if (!message.trim()) return undefined;
+  return {
+    action: "add",
+    ...(when === undefined ? {} : { when }),
+    ...(every === undefined ? {} : { every }),
+    ...(maxRuns === undefined ? {} : { maxRuns }),
+    message,
+  };
 }
 
 function splitCommand(input: string): string[] {

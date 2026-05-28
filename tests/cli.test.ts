@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { runCli } from "../src/cli.js";
+import { PlanifyStore } from "../src/store.js";
 
 let dir: string;
 let stdout: string[];
@@ -40,6 +41,22 @@ describe("runCli", () => {
     stdout = [];
     expect(await run(["cancel", taskId])).toBe(0);
     expect(stdout[0]).toBe(`Cancelled ${taskId}`);
+  });
+
+  test("adds recurring tasks with an optional maximum run count", async () => {
+    const before = Date.now();
+
+    expect(await run(["add", "--session", "/tmp/session.jsonl", "--cwd", "/tmp/project", "--every", "1h", "--max-runs", "3", "--message", "run checks"])).toBe(0);
+
+    const [task] = await new PlanifyStore({ rootDir: dir }).list();
+    expect(task).toEqual(expect.objectContaining({ intervalMs: 3_600_000, maxRuns: 3, runCount: 0 }));
+    expect(task.dueAt).toBeGreaterThanOrEqual(before + 3_600_000);
+    expect(task.dueAt).toBeLessThanOrEqual(Date.now() + 3_600_000);
+  });
+
+  test("rejects max runs for one-off tasks", async () => {
+    expect(await run(["add", "--session", "/tmp/session.jsonl", "--at", "in 15m", "--max-runs", "3", "--message", "run checks"])).toBe(1);
+    expect(stderr[0]).toContain("--max-runs requires --every");
   });
 
   test("returns errors for missing arguments and invalid times", async () => {

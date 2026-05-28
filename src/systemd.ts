@@ -1,11 +1,16 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 
-import { runCommand } from "./command-runner.js";
+import { type CommandRunner, requireSuccessfulCommand, runCommand } from "./command-runner.js";
+import { requireAbsolutePath } from "./path-utils.js";
 
 export interface SystemdUnitOptions {
   binPath: string;
+}
+
+export interface InstallSystemdOptions extends SystemdUnitOptions {
+  exec?: CommandRunner;
 }
 
 export function buildSystemdUnits(options: SystemdUnitOptions): { service: string; timer: string } {
@@ -16,17 +21,17 @@ export function buildSystemdUnits(options: SystemdUnitOptions): { service: strin
   };
 }
 
-export async function installSystemdUserTimer(options: SystemdUnitOptions): Promise<void> {
+export async function installSystemdUserTimer(options: InstallSystemdOptions): Promise<void> {
   const dir = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "systemd", "user");
   await mkdir(dir, { recursive: true });
   const units = buildSystemdUnits(options);
+  const exec = options.exec ?? runCommand;
   await writeFile(join(dir, "pi-planify.service"), units.service, "utf8");
   await writeFile(join(dir, "pi-planify.timer"), units.timer, "utf8");
-  await runCommand("systemctl", ["--user", "daemon-reload"], { cwd: process.cwd() });
-  await runCommand("systemctl", ["--user", "enable", "--now", "pi-planify.timer"], { cwd: process.cwd() });
+  requireSuccessfulCommand("systemctl --user daemon-reload", await exec("systemctl", ["--user", "daemon-reload"], { cwd: process.cwd() }));
+  requireSuccessfulCommand("systemctl --user enable --now pi-planify.timer", await exec("systemctl", ["--user", "enable", "--now", "pi-planify.timer"], { cwd: process.cwd() }));
 }
 
 function requireAbsoluteBinPath(binPath: string): string {
-  if (!isAbsolute(binPath)) throw new Error(`pi-planify systemd service requires an absolute executable path, got: ${binPath}`);
-  return binPath;
+  return requireAbsolutePath(binPath, "pi-planify systemd service requires an absolute executable path");
 }

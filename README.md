@@ -17,6 +17,7 @@ Use `/planify` when you want the reminder to come back into the session you are 
 /planify in 10m every 1h max 5 "check the test results"
 /planify list
 /planify cancel <task-id>
+/planify install-scheduler
 /planify install-service
 ```
 
@@ -40,6 +41,7 @@ pi-planify add --session <file> --cwd <dir> --every 1h --max-runs 5 --message <t
 pi-planify list
 pi-planify cancel <task-id>
 pi-planify run-due
+pi-planify install-scheduler
 pi-planify install-service
 ```
 
@@ -49,7 +51,15 @@ CLI `add` creates headless tasks. `run-due` delivers due headless tasks by runni
 pi --session <session-file> -p "<scheduled message>"
 ```
 
-`install-service` installs a systemd user timer that runs `pi-planify run-due` every minute.
+`install-scheduler` installs a per-user platform scheduler that runs `pi-planify run-due` every minute. `install-service` is kept as an alias.
+
+Platform behavior:
+
+- Linux installs a systemd user service and timer under `$XDG_CONFIG_HOME/systemd/user` or `~/.config/systemd/user`.
+- macOS installs a per-user launchd LaunchAgent under `~/Library/LaunchAgents` and logs to `~/Library/Logs/pi-planify`.
+- Windows installs a per-user Task Scheduler task with `schtasks.exe`.
+
+macOS and Windows schedulers can miss scheduled runs while the machine sleeps or is powered off. The next worker invocation catches up by delivering all tasks whose due time has passed. Linux systemd uses `Persistent=true` for more robust missed-run recovery.
 
 ## Delivery behavior
 
@@ -67,4 +77,4 @@ Tasks are stored in a global user queue under `~/.pi/agent/planify/`.
 
 Each task records its target session file, cwd, due time, message, delivery mode, status, attempts, recurrence settings, successful run count, and delivery errors.
 
-Claimed tasks are recovered if a live session or headless worker exits before delivery completes. The systemd timer uses `Persistent=true`, so missed headless runs after sleep or reboot are caught up.
+Claimed tasks are recovered if a live session or headless worker exits before delivery completes. On Linux, the systemd timer uses `Persistent=true`, so missed timer invocations after sleep or reboot are caught up by systemd. On other platforms, the next scheduled worker invocation catches up by delivering tasks whose due time has passed.

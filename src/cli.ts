@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { deliverDueTasks } from "./delivery.js";
 import { defaultPlanifyRoot } from "./paths.js";
 import { PlanifyStore } from "./store.js";
-import { installSystemdUserTimer } from "./systemd.js";
+import { installPlatformScheduler, type InstallSchedulerOptions } from "./scheduler.js";
 import { parseInterval, parseWhen } from "./time.js";
 
 interface ParsedArgs {
@@ -12,7 +12,13 @@ interface ParsedArgs {
   positionals: string[];
 }
 
-export async function runCli(argv: string[], options: { stdout?: (text: string) => void; stderr?: (text: string) => void } = {}): Promise<number> {
+export interface RunCliOptions {
+  stdout?: (text: string) => void;
+  stderr?: (text: string) => void;
+  installScheduler?: (options: InstallSchedulerOptions) => Promise<void>;
+}
+
+export async function runCli(argv: string[], options: RunCliOptions = {}): Promise<number> {
   const out = options.stdout ?? ((text) => process.stdout.write(`${text}\n`));
   const err = options.stderr ?? ((text) => process.stderr.write(`${text}\n`));
 
@@ -62,10 +68,11 @@ export async function runCli(argv: string[], options: { stdout?: (text: string) 
         out(`Claimed ${summary.claimed}, delivered ${summary.delivered}, failed ${summary.failed}.`);
         return summary.failed > 0 ? 1 : 0;
       }
+      case "install-scheduler":
       case "install-service": {
         const binPath = parsed.flags.get("bin") ?? resolve(process.argv[1] ?? "pi-planify");
-        await installSystemdUserTimer({ binPath });
-        out("Installed and started pi-planify user timer.");
+        await (options.installScheduler ?? installPlatformScheduler)({ binPath });
+        out("Installed and started pi-planify scheduler.");
         return 0;
       }
       case "help":
@@ -116,5 +123,5 @@ function parseOptionalPositiveInteger(value: string | undefined, name: string): 
 }
 
 function helpText(): string {
-  return `pi-planify\n\nCommands:\n  add --session <file> (--at <when> | --every <interval>) [--every <interval>] [--max-runs <count>] [--cwd <dir>] --message <text>\n  list\n  cancel <task-id>\n  run-due\n  install-service [--bin <path>]`;
+  return `pi-planify\n\nCommands:\n  add --session <file> (--at <when> | --every <interval>) [--every <interval>] [--max-runs <count>] [--cwd <dir>] --message <text>\n  list\n  cancel <task-id>\n  run-due\n  install-scheduler [--bin <path>]\n  install-service [--bin <path>]`;
 }

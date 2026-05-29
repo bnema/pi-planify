@@ -16,4 +16,9 @@ describe("parsePlanifyCommand", () => {
     expect(parsePlanifyCommand("list")).toEqual({ action: "list" });
     expect(parsePlanifyCommand("cancel task-123")).toEqual({ action: "cancel", id: "task-123" });
   });
+
+  test("parses scheduler installation commands", () => {
+    expect(parsePlanifyCommand("install-scheduler")).toEqual({ action: "install-scheduler" });
+    expect(parsePlanifyCommand("install-service")).toEqual({ action: "install-service" });
+  });
 });

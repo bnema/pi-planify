@@ -2,6 +2,7 @@ export type ParsedPlanifyCommand =
   | { action: "add"; when?: string; every?: string; maxRuns?: number; message: string }
   | { action: "list" }
   | { action: "cancel"; id: string }
+  | { action: "install-scheduler" }
   | { action: "install-service" }
   | { action: "help" };
 
@@ -9,6 +10,7 @@ export function parsePlanifyCommand(input: string): ParsedPlanifyCommand {
   const trimmed = input.trim();
   if (!trimmed || trimmed === "help") return { action: "help" };
   if (trimmed === "list" || trimmed === "status") return { action: "list" };
+  if (trimmed === "install-scheduler") return { action: "install-scheduler" };
   if (trimmed === "install-service") return { action: "install-service" };
   if (trimmed.startsWith("cancel ")) {
     const id = trimmed.slice("cancel ".length).trim();

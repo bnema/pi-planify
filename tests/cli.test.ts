@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { runCli } from "../src/cli.js";
+import type { InstallSchedulerOptions } from "../src/scheduler.js";
 import { PlanifyStore } from "../src/store.js";
 
 let dir: string;
@@ -57,6 +58,38 @@ describe("runCli", () => {
   test("rejects max runs for one-off tasks", async () => {
     expect(await run(["add", "--session", "/tmp/session.jsonl", "--at", "in 15m", "--max-runs", "3", "--message", "run checks"])).toBe(1);
     expect(stderr[0]).toContain("--max-runs requires --every");
+  });
+
+  test("runs platform scheduler installation through install-scheduler", async () => {
+    let installed: InstallSchedulerOptions | undefined;
+
+    const exitCode = await runCli(["install-scheduler", "--bin", "/usr/local/bin/pi-planify"], {
+      stdout: (text) => stdout.push(text),
+      stderr: (text) => stderr.push(text),
+      installScheduler: async (options) => {
+        installed = options;
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(installed).toEqual({ binPath: "/usr/local/bin/pi-planify" });
+    expect(stdout[0]).toBe("Installed and started pi-planify scheduler.");
+  });
+
+  test("keeps install-service as an alias for install-scheduler", async () => {
+    let installed: InstallSchedulerOptions | undefined;
+
+    const exitCode = await runCli(["install-service", "--bin", "/usr/local/bin/pi-planify"], {
+      stdout: (text) => stdout.push(text),
+      stderr: (text) => stderr.push(text),
+      installScheduler: async (options) => {
+        installed = options;
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(installed).toEqual({ binPath: "/usr/local/bin/pi-planify" });
+    expect(stdout[0]).toBe("Installed and started pi-planify scheduler.");
   });
 
   test("returns errors for missing arguments and invalid times", async () => {

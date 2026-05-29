@@ -8,7 +8,7 @@ import { deliverLiveDueTasks } from "../src/live-delivery.js";
 import { defaultPlanifyRoot } from "../src/paths.js";
 import { PlanifyStore } from "../src/store.js";
 import { buildScheduledTaskMessage } from "../src/structured-task.js";
-import { installSystemdUserTimer } from "../src/systemd.js";
+import { installPlatformScheduler } from "../src/scheduler.js";
 import { parseInterval, parseWhen } from "../src/time.js";
 
 const TOOL_NAME = "planify";
@@ -86,6 +86,7 @@ function helpText(): string {
     '/planify in 10m every 1h max 5 "check the test results"',
     "/planify list",
     "/planify cancel <task-id>",
+    "/planify install-scheduler",
     "/planify install-service",
   ].join("\n");
 }
@@ -171,9 +172,10 @@ export default function planifyExtension(pi: ExtensionAPI): void {
             ctx.ui.notify((await store().cancel(parsed.id)) ? `Cancelled ${parsed.id}` : `Could not cancel ${parsed.id}`, "info");
             rescheduleLiveScheduler?.();
             return;
+          case "install-scheduler":
           case "install-service":
-            await installSystemdUserTimer({ binPath: PLANIFY_BIN_PATH });
-            ctx.ui.notify("Installed and started pi-planify user timer.", "info");
+            await installPlatformScheduler({ binPath: PLANIFY_BIN_PATH });
+            ctx.ui.notify("Installed and started pi-planify scheduler.", "info");
             return;
           case "help":
             ctx.ui.notify(helpText(), "info");
